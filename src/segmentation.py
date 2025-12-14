@@ -3,17 +3,14 @@ import numpy as np
 
 def segment_image(image):
     """
-    Phân đoạn ảnh và tách nền dùng K-Means Clustering:
-    1. Flatten ảnh.
-    2. K-Means (K=2) để phân cụm Nền vs Chuối.
+    Phân đoạn ảnh dùng Mean Shift và Color Thresholding (Step 2 & 3 part 1):
+    1. Mean Shift Filtering để làm phẳng màu (posterization).
+    2. Chuyển sang HSV để tách màu Chuối (Vàng/Xanh).
     3. Tạo mask nhị phân.
-    4. Xử lý hình thái học (Erosion, Dilation).
+    4. Xử lý hình thái học.
     
     Args:
-        image: Ảnh đầu vào (nên là ảnh đã được tiền xử lý hoặc ảnh gốc, 
-               nhưng thường K-Means chạy trên RGB hoặc LAB/HSV đều được. 
-               Tuy nhiên để hiển thị mask đúng, ta thường dùng logic màu).
-               Ở đây ta nhận vào ảnh 3 kênh (HSV hoặc RGB/BGR).
+        image: Ảnh đầu vào đã qua Gaussian Blur (BGR).
                
     Returns:
         mask: Ảnh nhị phân (0 và 255), 255 là vùng chuối.
@@ -21,59 +18,36 @@ def segment_image(image):
     if image is None:
         return None
 
-    # Reshape ảnh thành mảng các điểm ảnh (pixel) 2D: (height * width, 3)
-    pixel_values = image.reshape((-1, 3))
-    # Chuyển sang float32 cho K-Means
-    pixel_values = np.float32(pixel_values)
-
-    # Tiêu chí dừng (criteria) cho K-Means
-    # cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER: Dừng khi đạt max iter hoặc độ thay đổi nhỏ hơn epsilon
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+    # --- Bước 2: Phân đoạn ảnh bằng Mean Shift ---
+    # sp: Bán kính không gian (Spatial Window Radius)
+    # sr: Bán kính màu (Color Window Radius)
+    # Mean Shift giúp làm mịn ảnh, gộp các regions cùng màu, xóa chi tiết nhiễu.
+    shifted = cv2.pyrMeanShiftFiltering(image, sp=15, sr=30)
     
-    # Số cụm K = 2 (Nền và Chuối)
-    k = 2
+    # --- Bước 3 (Phần 1): Tạo mặt nạ (Binary Mask) dựa trên màu sắc ---
+    # Chuyển sang không gian màu HSV
+    hsv_shifted = cv2.cvtColor(shifted, cv2.COLOR_BGR2HSV)
     
-    # Áp dụng K-Means
-    # labels: nhãn của từng pixel (0 hoặc 1)
-    # centers: tâm của các cụm
-    _, labels, centers = cv2.kmeans(pixel_values, k, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+    # Định nghĩa khoảng màu cho chuối (Vàng đến Xanh lá)
+    # Lưu ý: Hue trong OpenCV là 0-179.
+    # Chuối chín (Vàng): Hue khoảng 20-30 (tương ứng 40-60 độ)
+    # Chuối xanh (Xanh lá): Hue khoảng 30-70 (tương ứng 60-140 độ)
+    # Ta lấy khoảng rộng từ 10 (Cam vàng) đến 90 (Xanh cyan) để bao quát.
     
-    # Chuyển centers về uint8
-    centers = np.uint8(centers)
+    lower_banana = np.array([15, 40, 40])  # Hue min, Sat min, Val min
+    upper_banana = np.array([90, 255, 255]) # Hue max, Sat max, Val max
     
-    # Reshape labels về kích thước ảnh gốc để tạo mask
-    labels = labels.flatten()
-    # Tạo mask tạm thời
-    # Lưu ý: Ta chưa biết cụm nào là chuối, cụm nào là nền.
-    # Giả định chuối thường có màu sáng hơn (hoặc vàng/xanh), nền tối/trắng/khác biệt.
-    # Tuy nhiên, cách đơn giản là dựa vào vị trí hoặc giả định nền chiếm diện tích lớn hơn?
-    # Ở đây, ta sẽ thử logic: Chuối thường nằm ở giữa, hoặc ta coi class ít pixel hơn là chuối nến background lớn?
-    # Hoặc đơn giản trả về label map rồi xử lý tiếp.
+    # Tạo mask
+    mask = cv2.inRange(hsv_shifted, lower_banana, upper_banana)
     
-    # Nhưng theo yêu cầu, ta cần tạo mask binary.
-    # Ta sẽ tạo ảnh phân đoạn trước
-    segmented_image = centers[labels.flatten()]
-    segmented_image = segmented_image.reshape(image.shape)
-    
-    # Để xác định đâu là nền, ta có thể giả sử 4 góc ảnh là nền.
-    # Lấy nhãn của góc (0,0)
-    corner_label = labels[0] # Giả sử góc trái trên là nền
-    
-    # Tạo mask: Vùng KHÔNG PHẢI corner_label sẽ là 255 (Chuối), vùng corner_label là 0 (Nền)
-    mask = np.where(labels.reshape(image.shape[:2]) == corner_label, 0, 255).astype('uint8')
-    
-    # 4. Xử lý hình thái học (Morphological Operations)
-    # Erosion để loại bỏ nhiễu nhỏ
-    # Dilation để lấp đầy các lỗ nhỏ trong quả chuối
+    # --- Bước 3 (Phần 2): Xử lý hình thái học ---
+    # Dùng kernel để khử nhiễu
     kernel = np.ones((5, 5), np.uint8)
     
-    # Open: Erosion -> Dilation (khử nhiễu bên ngoài)
-    # Close: Dilation -> Erosion (lấp lỗ bên trong)
-    # Theo note.txt: "Erosion... và Dilation... để xóa các lỗ nhỏ bên trong hoặc viền răng cưa"
+    # Morphology Open: Xóa nhiễu trắng nhỏ trên nền đen
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
     
-    # Dùng MorphologyEx Open để khử nhiễu liti nền
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    # Dùng MorphologyEx Close để lấp lỗ trong chuối
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    # Morphology Close: Lấp lỗ đen nhỏ trong vùng trắng (chuối)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
     
     return mask

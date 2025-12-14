@@ -1,0 +1,6 @@
+Metric,Value
+Total_Crops,86
+Total_Unique_Files,78
+Total_Correct_Predictions,69
+Total_Incorrect_Predictions,17
+Accuracy,0.8023

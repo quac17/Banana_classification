@@ -1,0 +1,258 @@
+BÁO CÁO DỰ ÁN: XÂY DỰNG HỆ THỐNG NHẬN DIỆN ĐỘ CHÍN CỦA CHUỐI DỰA TRÊN XỬ LÝ ẢNH VÀ MÁY HỌC
+
+MỤC LỤC
+1.  Giới thiệu
+2.  Cơ sở lý thuyết
+3.  Phương pháp đề xuất (Proposed Method)
+4.  Thực nghiệm và Kết quả
+5.  Kết luận và Hướng phát triển
+
+________________________________________
+
+NỘI DUNG CHI TIẾT
+
+1. GIỚI THIỆU (INTRODUCTION)
+
+1.1. Đặt vấn đề
+   Trong nông nghiệp hiện đại và công nghiệp chế biến thực phẩm, việc phân loại nông sản tự động đóng vai trò then chốt giúp nâng cao năng suất, đảm bảo sự đồng đều về chất lượng và giảm thiểu chi phí nhân công. Chuối là loại trái cây phổ biến toàn cầu, có các giai đoạn chín thể hiện rõ rệt qua màu sắc và đốm nâu trên vỏ. Tuy nhiên, việc phân loại thủ công thường tốn thời gian và mang tính chủ quan. Hơn nữa, môi trường thực tế (như băng chuyền, vườn tược) thường lẫn tạp chất như lá cây, đất đá, gây khó khăn cho việc nhận diện chính xác.
+
+1.2. Mục tiêu đề tài
+   Xây dựng một hệ thống thị giác máy tính (Computer Vision) kết hợp với Máy học (Machine Learning) để:
+   - Tự động phát hiện và tách quả chuối khỏi nền phức tạp (đất, đá, lá cây).
+   - Phân loại chuối vào 4 nhóm trạng thái: 
+     + unripe (Xanh)
+     + ripe (Chín vàng)
+     + overripe (Chín già/Trứng cuốc - có đốm nâu nhưng vẫn ăn được)
+     + rotten (Hỏng/Thối - không dùng được)
+   - Mô hình phân loại chính được sử dụng là **Cây quyết định (Decision Tree)**, bên cạnh đó có thực nghiệm so sánh với KNN và SVM.
+
+1.3. Phạm vi
+   - Dữ liệu đầu vào: Ảnh tĩnh chụp buồng chuối hoặc quả chuối trong môi trường có kiểm soát hoặc bán kiểm soát.
+   - Môi trường nền: Có thể chứa tạp chất (đá, lá khô).
+
+________________________________________
+
+2. CƠ SỞ LÝ THUYẾT (THEORETICAL BACKGROUND)
+
+2.1. Không gian màu HSV
+   Thay vì sử dụng không gian màu RGB truyền thống chịu ảnh hưởng lớn bởi cường độ ánh sáng, dự án sử dụng không gian màu HSV (Hue, Saturation, Value). 
+   - **Hue (H)**: Giá trị màu sắc thực sự, rất quan trọng để phân biệt giữa chuối xanh (H cao) và chuối chín (H thấp hơn).
+   - **Saturation (S)**: Độ bão hòa, giúp phân biệt màu vàng rực rỡ của chuối chín với màu vàng xỉn/nâu của lá khô hoặc quả hỏng.
+
+2.2. Phân đoạn ảnh (Image Segmentation)
+   
+   **2.2.1. K-Means Clustering (Lý do không sử dụng)**
+   K-Means là thuật toán phân cụm phổ biến, nhưng không phù hợp với bài toán này vì:
+   - K-Means yêu cầu xác định trước số cụm (k), trong khi số lượng quả chuối trong ảnh không cố định.
+   - K-Means phân cụm dựa trên khoảng cách trong không gian màu, không xem xét tính liên tục không gian (spatial continuity), dẫn đến kết quả phân đoạn không chính xác khi có nhiễu hoặc nền phức tạp.
+   - K-Means không bảo toàn biên (edge-preserving), làm mất các chi tiết quan trọng.
+   
+   **2.2.2. Mean Shift Filtering (Phương pháp được chọn)**
+   Mean Shift Filtering là thuật toán then chốt trong bước tiền xử lý. Nó hoạt động như một bộ lọc làm trơn nhưng bảo toàn biên (edge-preserving smoothing).
+   - **Nguyên lý**: Mean Shift gộp các pixel có màu sắc tương đồng trong cả không gian màu và không gian hình học, tạo ra các vùng đồng nhất.
+   - **Tác dụng**: Làm đều màu các vùng có màu sắc tương đồng (ví dụ: làm mịn vỏ chuối, xóa các đốm nhiễu nhỏ không quan trọng), đồng thời giữ lại ranh giới rõ ràng giữa quả chuối và nền. Điều này hỗ trợ đắc lực cho bước tách biên (Thresholding/Canny) sau này.
+   - **Tham số**: `sp=15` (bán kính không gian), `sr=30` (bán kính màu) được chọn dựa trên thực nghiệm để cân bằng giữa hiệu quả làm mịn và bảo toàn chi tiết.
+
+2.3. Máy học: Các mô hình phân loại
+   Dự án thực nghiệm với ba mô hình máy học để so sánh hiệu quả:
+   
+   **2.3.1. Cây quyết định (Decision Tree)**
+   Mô hình Cây quyết định được chọn làm mô hình chính ("Main Model") vì tính trực quan và khả năng giải thích cao (Explainability).
+   - **Nguyên lý**: Xây dựng một cấu trúc dạng cây, trong đó mỗi nút (node) là một câu hỏi kiểm tra giá trị của một đặc trưng (ví dụ: "Hue > 60?"). Các nhánh đại diện cho kết quả của câu hỏi, và lá (leaf) đại diện cho nhãn phân loại cuối cùng.
+   - **Lý do chọn**: Dữ liệu đặc trưng của chuối (Màu sắc, Tỷ lệ đốm) có tính phân ngưỡng rõ ràng, rất phù hợp với cách chia nhánh if-else của Decision Tree. Mô hình sử dụng chỉ số Gini Impurity để tối ưu hóa việc chia nhánh.
+   
+   **2.3.2. K-Nearest Neighbors (KNN)**
+   KNN là thuật toán học dựa trên instance (instance-based learning), phân loại dựa trên k mẫu gần nhất trong không gian đặc trưng.
+   - **Tham số**: k=10, sử dụng khoảng cách Euclidean.
+   - **Chuẩn hóa**: Áp dụng StandardScaler để đảm bảo các đặc trưng có cùng thang đo.
+   
+   **2.3.3. Support Vector Machine (SVM)**
+   SVM tìm siêu phẳng tối ưu để phân tách các lớp dữ liệu trong không gian đặc trưng.
+   - **Kernel**: RBF (Radial Basis Function) để xử lý dữ liệu không tuyến tính.
+   - **Chuẩn hóa**: Áp dụng StandardScaler trước khi huấn luyện.
+
+________________________________________
+
+3. PHƯƠNG PHÁP ĐỀ XUẤT (PROPOSED METHODOLOGY)
+
+Quy trình xử lý của hệ thống (Pipeline) trải qua 5 bước chính:
+
+[Input Image] -> [Preprocessing & Segmentation] -> [Detection & Cropping] -> [Feature Extraction] -> [Classification] -> [Output Label]
+
+3.1. Tiền xử lý & Phân đoạn (Preprocessing & Segmentation) - Trọng tâm xử lý ảnh
+   Đây là bước quyết định độ chính xác của đầu vào mô hình.
+   - **Bước 0: Làm mịn sơ bộ**: Sử dụng **Gaussian Blur** với kernel size `(5, 5)` để khử nhiễu hạt (liti).
+   - **Bước 1: Mean Shift Filtering**: Áp dụng bộ lọc `cv2.pyrMeanShiftFiltering` với tham số `sp=15` (bán kính không gian) và `sr=30` (bán kính màu). Bước này giúp làm mịn ảnh, loại bỏ các chi tiết nhiễu trên bề mặt vỏ chuối và nền, giúp các vùng màu trở nên đồng nhất ("phẳng" hóa).
+   - **Bước 2: Tạo Mask màu (Color Thresholding)**: Chuyển ảnh sang không gian HSV và tạo mask để giữ lại các pixel trong khoảng màu đặc trưng của chuối:
+     + **Hue**: [15, 90] (Bao phủ dải màu từ cam vàng đến xanh lục).
+     + **Saturation**: [40, 255] (Loại bỏ các vùng quá nhạt/xám).
+     + **Value**: [40, 255] (Loại bỏ vùng quá tối).
+   - **Bước 3: Xử lý hình thái học (Morphology)**: Sử dụng phép **Opening** (Kernel 5x5, 2 lần) để xóa nhiễu trắng nhỏ và **Closing** (Kernel 5x5, 2 lần) để lấp đầy các lỗ đen nhỏ bên trong quả chuối.
+
+3.2. Phát hiện và Cắt vật thể (Detection & Cropping)
+   Để phân loại từng quả chuối, hệ thống cần tách rời chúng khỏi ảnh tổng thể.
+   - **Tạo Mask**: Sử dụng kỹ thuật phân ngưỡng (Thresholding) trên ảnh xám hoặc ảnh màu để tạo mặt nạ nhị phân (Binary Mask) tách biệt vùng có khả năng là vật thể.
+   - **Tìm Contour**: Sử dụng `cv2.findContours` để bao quanh các vùng liền mạch.
+   - **Bộ lọc thông minh (Advanced Filtering)**: Để loại bỏ đá, lá khô, rác, hệ thống áp dụng các luật lọc:
+     + **Diện tích (Area)**: Loại bỏ contour quá nhỏ (< 2000 px).
+     + **Tỷ lệ khung hình (Aspect Ratio)**: Loại bỏ các vật thể quá tròn/vuông (aspect ratio < 1.2), chỉ giữ lại vật thể thuôn dài (đặc trưng quả chuối).
+     + **Độ bão hòa (Saturation)**: Loại bỏ các vật thể có màu xám/trắng/đen (Saturation < 20 là đá/bê tông) hoặc màu nâu xỉn nhạt (Saturation < 90 là lá khô), chỉ giữ lại các vật thể có màu sắc rực rỡ (vàng/xanh).
+
+3.3. Trích xuất đặc trưng (Feature Engineering)
+   Với mỗi quả chuối đã cắt (cropped image), hệ thống tính toán vectơ đặc trưng 5 chiều:
+   
+   1. **Mean Hue (F₁)**: Giá trị Hue trung bình trong vùng mask của quả chuối.
+      - Phân biệt Xanh (Hue cao, khoảng 60-90) vs. Vàng (Hue thấp, khoảng 20-40).
+      - Tính toán: `mean_hue = cv2.mean(hsv, mask=mask)[0]`
+   
+   2. **Mean Saturation (F₂)**: Độ bão hòa màu trung bình.
+      - Phân biệt Chuối tươi (Saturation cao, >100) vs. Lá khô/Đá (Saturation thấp, <90).
+      - Tính toán: `mean_saturation = cv2.mean(hsv, mask=mask)[1]`
+   
+   3. **Mean Value (F₃)**: Độ sáng trung bình.
+      - Phản ánh điều kiện ánh sáng và độ tươi của quả.
+      - Tính toán: `mean_value = cv2.mean(hsv, mask=mask)[2]`
+   
+   4. **Brown Spot Ratio (F₄)**: Tỷ lệ điểm ảnh màu nâu/đen trên diện tích quả.
+      - **Đây là đặc trưng quan trọng nhất** để phân biệt **Chuối chín (Ripe)** với **Trứng cuốc (Overripe) / Hỏng (Rotten)**. Chuối càng chín/hỏng thì tỷ lệ này càng cao.
+      - **Phương pháp tính toán**:
+        + Sử dụng kênh Value (V) trong HSV: `v_channel = hsv[:, :, 2]`
+        + Xác định pixel đốm nâu/đen: `dark_spots = cv2.bitwise_and(mask, cv2.inRange(v_channel, 0, 80))`
+        + Tính tỷ lệ: `brown_spot_ratio = cv2.countNonZero(dark_spots) / cv2.countNonZero(mask)`
+        + Ngưỡng Value < 80 được chọn dựa trên quan sát: chuối hỏng có nhiều vùng tối (đốm nâu/đen) với Value thấp.
+   
+   5. **Edge Density (F₅)**: Mật độ cạnh tìm được bằng Canny Edge Detection.
+      - Chuối hỏng bề mặt thường gồ ghề, nhăn nheo hơn chuối tươi, dẫn đến mật độ cạnh cao hơn.
+      - **Phương pháp tính toán**:
+        + Làm mờ ảnh xám: `blurred_gray = cv2.GaussianBlur(gray, (3, 3), 0)`
+        + Phát hiện cạnh: `edges = cv2.Canny(blurred_gray, 50, 150)`
+        + Chỉ tính cạnh trong vùng mask: `edges_in_banana = cv2.bitwise_and(edges, edges, mask=mask)`
+        + Tính mật độ: `edge_density = cv2.countNonZero(edges_in_banana) / cv2.countNonZero(mask)`
+
+3.4. Mô hình phân lớp (Classification)
+   Vectơ đặc trưng `[Mean_Hue, Mean_Saturation, Mean_Value, Brown_Spot_Ratio, Edge_Density]` được đưa vào các mô hình máy học đã được huấn luyện để đưa ra nhãn cuối cùng.
+   
+   **Quy trình huấn luyện**:
+   - Dữ liệu được chia thành tập Train và Test.
+   - Nhãn được mã hóa bằng LabelEncoder để chuyển đổi từ chuỗi (unripe, ripe, overripe, rotten) sang số nguyên.
+   - Mỗi mô hình được huấn luyện độc lập trên tập Train và đánh giá trên tập Test.
+   - KNN và SVM sử dụng StandardScaler để chuẩn hóa dữ liệu trước khi huấn luyện, trong khi Decision Tree không cần chuẩn hóa do tính chất của thuật toán.
+
+______________________________________
+4. THỰC NGHIỆM VÀ KẾT QUẢ (EXPERIMENTS & RESULTS)
+
+4.1. Thiết lập thực nghiệm
+   
+   **4.1.1. Bộ dữ liệu (Dataset)**
+   - **Nguồn dữ liệu**: Ảnh chụp chuối ở 4 trạng thái được tổ chức trong các thư mục riêng biệt.
+   - **Tập Train (Huấn luyện)**:
+     + Unripe: 25 ảnh
+     + Ripe: 29 ảnh
+     + Overripe: 22 ảnh
+     + Rotten: 34 ảnh
+     + Tổng cộng: ~110 ảnh gốc, sau khi xử lý tạo ra **86 mẫu (crops)** từ các quả chuối được phát hiện.
+   - **Tập Test (Kiểm thử)**:
+     + Unripe: 12 ảnh
+     + Ripe: 13 ảnh
+     + Overripe: 15 ảnh
+     + Rotten: 12 ảnh
+     + Tổng cộng: ~52 ảnh gốc, sau khi xử lý tạo ra **50 mẫu (crops)**.
+   - **Lưu ý**: Một ảnh có thể chứa nhiều quả chuối, do đó số lượng crops lớn hơn số lượng ảnh gốc.
+   
+   **4.1.2. Cấu hình mô hình**
+   - **Decision Tree (Main)**: 
+     + Sử dụng chỉ số Gini Impurity để chia nhánh.
+     + Random state: 42 (để đảm bảo tính tái lập).
+     + Không cần chuẩn hóa dữ liệu.
+   - **KNN**: 
+     + k=10 (số láng giềng gần nhất).
+     + Khoảng cách: Euclidean.
+     + Chuẩn hóa: StandardScaler.
+   - **SVM**: 
+     + Kernel: RBF (Radial Basis Function).
+     + Random state: 42.
+     + Chuẩn hóa: StandardScaler.
+
+4.2. Kết quả định lượng
+   
+   **4.2.1. Độ chính xác (Accuracy)**
+   Kết quả thực nghiệm trên các tập dữ liệu:
+   
+   | Mô hình | Tập Train | Tập Test |
+   |---------|-----------|----------|
+   | **Decision Tree** | 100.00% (86/86) | **72.00%** (36/50) |
+   | **KNN** | - | **62.00%** (31/50) |
+   | **SVM** | - | **64.00%** (32/50) |
+   
+   **Nhận xét**:
+   - **Decision Tree** đạt hiệu suất tốt nhất trên tập Test (72%), chứng tỏ khả năng học tốt các ngưỡng màu sắc và đặc trưng đốm nâu.
+   - Mô hình đạt độ chính xác 100% trên tập Train, cho thấy khả năng học thuộc tốt, nhưng có hiện tượng overfitting một phần (chênh lệch 28% giữa Train và Test).
+   - **KNN** và **SVM** có hiệu suất thấp hơn một chút, có thể do dữ liệu có kích thước nhỏ và các đặc trưng có tính phân ngưỡng rõ ràng phù hợp hơn với Decision Tree.
+   
+   **4.2.2. Ma trận nhầm lẫn (Confusion Matrix)**
+   Phân tích ma trận nhầm lẫn cho thấy:
+   - Hệ thống phân biệt rất tốt giữa nhóm **Unripe (Xanh)** và **Ripe (Chín)** dựa trên đặc trưng Hue (giá trị Hue cao vs. thấp).
+   - Sự nhầm lẫn chủ yếu xảy ra giữa:
+     + **Ripe** và **Overripe**: Nếu quả chuối chín có ít đốm nâu, đặc trưng Brown_Spot_Ratio có thể tương đương, dẫn đến nhầm lẫn.
+     + **Overripe** và **Rotten**: Nếu lượng đốm nâu tương đương nhau, việc phân biệt dựa trên Edge_Density và các đặc trưng khác.
+   - Đặc trưng `Brown_Spot_Ratio` đã giúp giải quyết tốt phần lớn các trường hợp phân biệt giữa Ripe và Overripe/Rotten.
+
+4.3. Đánh giá trực quan
+   
+   **4.3.1. Hiệu quả lọc nhiễu**
+   - Hệ thống đã loại bỏ thành công các đối tượng nhiễu như đá và lá khô nhờ vào bộ lọc bão hòa (Saturation Filter) trong bước Cropping.
+   - Các bộ lọc (Area > 2000px, Aspect Ratio > 1.2, Saturation > 90) đã giúp loại bỏ hiệu quả các vật thể không phải chuối.
+   
+   **4.3.2. Phân tích không gian đặc trưng**
+   - Biểu đồ biên quyết định (Decision Boundary) của SVM (trên không gian chiếu PCA 2D) cho thấy các lớp dữ liệu có sự phân tách tương đối rõ ràng, chứng tỏ các đặc trưng được chọn là hiệu quả.
+   - Các đặc trưng màu sắc (Hue, Saturation) tạo ra sự phân tách tốt giữa Unripe và Ripe.
+   - Đặc trưng Brown_Spot_Ratio giúp phân biệt rõ ràng giữa Ripe và Overripe/Rotten.
+   
+   **4.3.3. Ví dụ minh họa**
+   - Các ảnh đã được cắt (cropped) và lưu trong thư mục `output/train_result/` và `output/test_result/` cho phép đánh giá trực quan chất lượng phát hiện và phân loại.
+   - Hệ thống có thể phát hiện và phân loại chính xác các quả chuối trong ảnh có nhiều quả hoặc có nền phức tạp.
+
+________________________________________
+
+5. KẾT LUẬN VÀ HƯỚNG PHÁT TRIỂN
+
+5.1. Kết luận
+   Dự án đã xây dựng thành công quy trình khép kín từ xử lý ảnh thô đến phân loại độ chín của chuối với các thành tựu chính:
+   
+   - **Xử lý ảnh hiệu quả**: Sử dụng thành công **Mean Shift Filtering** và **HSV Color Space** để phân đoạn và lọc nhiễu nền phức tạp. Hệ thống có thể tự động phát hiện và tách quả chuối khỏi các vật thể nhiễu như đá, lá khô.
+   
+   - **Đặc trưng kỹ thuật đáng tin cậy**: Các đặc trưng được thiết kế, đặc biệt là **Brown Spot Ratio**, chứng minh được độ tin cậy cao trong việc phân biệt các trạng thái chín của chuối. Vectơ đặc trưng 5 chiều [Hue, Saturation, Value, Brown_Spot_Ratio, Edge_Density] đủ để mô tả đặc điểm của từng trạng thái.
+   
+   - **Mô hình phân loại hiệu quả**: Mô hình **Decision Tree** đạt độ chính xác 72% trên tập Test, hoạt động nhanh, hiệu quả và có khả năng giải thích cao (explainability), phù hợp với ứng dụng thực tế.
+   
+   - **So sánh mô hình**: Việc thực nghiệm với 3 mô hình (Decision Tree, KNN, SVM) cho thấy Decision Tree phù hợp nhất với đặc điểm dữ liệu có tính phân ngưỡng rõ ràng.
+
+5.2. Hạn chế
+   - **Overfitting**: Mô hình đạt 100% trên tập Train nhưng chỉ 72% trên tập Test, cho thấy có hiện tượng học thuộc một phần. Cần tăng cường dữ liệu hoặc áp dụng kỹ thuật regularization.
+   
+   - **Kích thước dữ liệu**: Tập dữ liệu còn nhỏ (~110 ảnh train, ~52 ảnh test), chưa đủ đa dạng về điều kiện ánh sáng, góc chụp, và các biến thể khác.
+   
+   - **Tốc độ xử lý**: Mean Shift Filtering có thể chậm với ảnh độ phân giải cao, ảnh hưởng đến tốc độ xử lý thời gian thực.
+   
+   - **Điều kiện ánh sáng**: Hệ thống có thể gặp khó khăn với ánh sáng quá tối hoặc quá chói, ảnh hưởng đến độ chính xác của phân đoạn màu.
+   
+   - **Nhầm lẫn giữa các lớp**: Vẫn còn sự nhầm lẫn giữa Ripe và Overripe, cũng như giữa Overripe và Rotten trong một số trường hợp biên.
+
+5.3. Hướng phát triển
+   - **Tăng cường dữ liệu**: 
+     + Thu thập thêm dữ liệu để bao phủ nhiều điều kiện ánh sáng, góc chụp, và biến thể khác nhau.
+     + Áp dụng kỹ thuật Data Augmentation (xoay, thay đổi độ sáng, thêm nhiễu) để mở rộng tập dữ liệu.
+   
+   - **Cải thiện mô hình**:
+     + Thử nghiệm các kiến trúc Deep Learning (như CNN hoặc YOLO) để cải thiện tốc độ phát hiện vật thể và độ chính xác phân loại trong các tình huống chồng lấp (occlusion).
+     + Áp dụng kỹ thuật Ensemble Learning để kết hợp nhiều mô hình.
+     + Tối ưu hóa hyperparameters của các mô hình hiện tại.
+   
+   - **Tối ưu hóa xử lý ảnh**:
+     + Nghiên cứu các phương pháp phân đoạn nhanh hơn thay thế Mean Shift cho ứng dụng thời gian thực.
+     + Cải thiện thuật toán phát hiện đốm nâu để tính toán Brown_Spot_Ratio chính xác hơn.
+   
+   - **Ứng dụng thực tế**:
+     + Phát triển ứng dụng di động để người dùng có thể chụp và nhận diện trực tiếp.
+     + Tích hợp vào hệ thống băng chuyền tự động trong nhà máy chế biến.
+     + Xây dựng giao diện web để quản lý và theo dõi kết quả phân loại.
